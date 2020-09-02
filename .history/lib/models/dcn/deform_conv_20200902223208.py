@@ -19,8 +19,6 @@ from . import deform_conv_cuda
 class DeformConvFunction(Function):
     """
     ctx的作用在静态函数中类似于self,只不过self指代类实例，而静态函数不需要创建实例。
-    input是输入的特征图，shape为(N,C,H,W); weight是卷积核;offset是卷积核的位置偏移
-    size属性是返回指定维度的元素数目，若为空则返回所有的元素数目;
     """
     @staticmethod
     def forward(ctx,
@@ -104,7 +102,6 @@ class DeformConvFunction(Function):
         return (grad_input, grad_offset, grad_weight, None, None, None, None,
                 None)
 
-    # 计算返回输出的特征图大小
     @staticmethod
     def _output_size(input, weight, padding, dilation, stride):
         channels = weight.size(0)

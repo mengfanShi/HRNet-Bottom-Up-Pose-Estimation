@@ -298,7 +298,7 @@ class HighResolutionModule(nn.Module):
                 else:
                     conv3x3s = []
                     for k in range(i-j):
-                        # 只有在最后一层完成分支间的通道转换，否则只在同分支内做下采样
+                        # 只有在最后一层完成分支间的通道转换，否则只在单分支内做下采样
                         if k == i - j - 1:
                             num_outchannels_conv3x3 = num_inchannels[i]
                             conv3x3s.append(nn.Sequential(
@@ -332,7 +332,6 @@ class HighResolutionModule(nn.Module):
         x_fuse = []
 
         for i in range(len(self.fuse_layers)):
-            # 由于fuse_layer[0][0]为None,所以作为特殊情况提出
             y = x[0] if i == 0 else self.fuse_layers[i][0](x[0])
             for j in range(1, self.num_branches):
                 if i == j:

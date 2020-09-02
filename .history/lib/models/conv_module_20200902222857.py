@@ -111,22 +111,14 @@ class Bottleneck(nn.Module):
 
 
 class STNBLOCK(nn.Module):
-    """
-    pixel-wise STN是 Deformable Convoultion的一个套壳，先是经过几个卷积模块预测
-    卷积核内各元素偏移后的位置，然后由此计算得到偏移量，输入到Deformable Conv中计算
-    """
     expansion = 1
     def __init__(self, inplanes, outplanes, stride=1, 
             downsample=None, dilation=1, deformable_groups=1):
         super(STNBLOCK, self).__init__()
-        
-        # 3*3的卷积核内位置相对中心位置的偏移可编码为2*9的矩阵，维度2为x和y上偏移，维度9为元素数目
         regular_matrix = torch.tensor(np.array([[-1, -1, -1, 0, 0, 0, 1, 1, 1], \
                                                 [-1, 0, 1, -1 ,0 ,1 ,-1, 0, 1]]))
         self.register_buffer('regular_matrix', regular_matrix.float())
         self.downsample = downsample
-
-        # 转换矩阵T的维度为2*2,所以在这里将channel设为 2*2=4 
         self.transform_matrix_conv1 = nn.Conv2d(inplanes, 4, 3, 1, 1, bias=True)
         self.stn_conv1 = DeformConv(
             inplanes,
@@ -184,11 +176,6 @@ class STNBLOCK(nn.Module):
 
         
 class HighResolutionModule(nn.Module):
-    """
-    num_branches是分支数目,blocks是基础卷积模块,num_blocks是每个分支上模块数目,
-    num_inchannels是每个分支上每个模块的输入通道数目
-    multi_scale_output控制是否在输出的时侯结合多个分支的结果
-    """
     def __init__(self, num_branches, blocks, num_blocks, num_inchannels,
                  num_channels, fuse_method, multi_scale_output=True):
         super(HighResolutionModule, self).__init__()
@@ -229,7 +216,6 @@ class HighResolutionModule(nn.Module):
     def _make_one_branch(self, branch_index, block, num_blocks, num_channels,
                          stride=1):
         downsample = None
-        # 控制通道数一致来完成残差模块的组成
         if stride != 1 or \
            self.num_inchannels[branch_index] != num_channels[branch_index] * block.expansion:
             downsample = nn.Sequential(
@@ -241,16 +227,10 @@ class HighResolutionModule(nn.Module):
             )
 
         layers = []
-        # 第一个block的输入可能和其他不同，故单独构建
         layers.append(block(self.num_inchannels[branch_index],
                             num_channels[branch_index], stride, downsample))
         self.num_inchannels[branch_index] = \
             num_channels[branch_index] * block.expansion
-
-        """
-        若expansion = 1,则使用Basic Block,此时输出channel为num_channels
-        若expansion != 1,则使用Bottleneck Block,此时输出channel为num_channels * expansion
-        """
         for i in range(1, num_blocks[branch_index]):
             layers.append(block(self.num_inchannels[branch_index],
                                 num_channels[branch_index]))
@@ -273,14 +253,9 @@ class HighResolutionModule(nn.Module):
         num_branches = self.num_branches
         num_inchannels = self.num_inchannels
         fuse_layers = []
-        """
-        如果需要多分支的结果结合输出，则需要对每个分支设置一个fuse_layer
-        分支序号越小，则分辨率相对越高
-        """
         for i in range(num_branches if self.multi_scale_output else 1):
             fuse_layer = []
             for j in range(num_branches):
-                # 如果分辨率比指定分支分辨率低，则需要上采样操作
                 if j > i:
                     fuse_layer.append(nn.Sequential(
                         nn.Conv2d(num_inchannels[j],
@@ -291,14 +266,11 @@ class HighResolutionModule(nn.Module):
                                   bias=False),
                         nn.BatchNorm2d(num_inchannels[i]),
                         nn.Upsample(scale_factor=2**(j-i), mode='nearest')))
-                # 如果分辨率和指定分支分辨率相同，则不作任何操作
                 elif j == i:
                     fuse_layer.append(None)
-                # 如果分辨率比指定分支分辨率高，则需要下采样操作
                 else:
                     conv3x3s = []
                     for k in range(i-j):
-                        # 只有在最后一层完成分支间的通道转换，否则只在同分支内做下采样
                         if k == i - j - 1:
                             num_outchannels_conv3x3 = num_inchannels[i]
                             conv3x3s.append(nn.Sequential(
@@ -332,7 +304,6 @@ class HighResolutionModule(nn.Module):
         x_fuse = []
 
         for i in range(len(self.fuse_layers)):
-            # 由于fuse_layer[0][0]为None,所以作为特殊情况提出
             y = x[0] if i == 0 else self.fuse_layers[i][0](x[0])
             for j in range(1, self.num_branches):
                 if i == j:
