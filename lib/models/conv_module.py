@@ -185,9 +185,11 @@ class STNBLOCK(nn.Module):
         
 class HighResolutionModule(nn.Module):
     """
+    模块作用是按照配置要求构建HRNet部分,建立相应的分支数并完成各分支之间的特征融合
     num_branches是分支数目,blocks是基础卷积模块,num_blocks是每个分支上模块数目,
     num_inchannels是每个分支上每个模块的输入通道数目
     multi_scale_output控制是否在输出的时侯结合多个分支的结果
+    fuse_method控制多分支融合的方法，默认为相加ADD
     """
     def __init__(self, num_branches, blocks, num_blocks, num_inchannels,
                  num_channels, fuse_method, multi_scale_output=True):
@@ -335,6 +337,7 @@ class HighResolutionModule(nn.Module):
             # 由于fuse_layer[0][0]为None,所以作为特殊情况提出
             y = x[0] if i == 0 else self.fuse_layers[i][0](x[0])
             for j in range(1, self.num_branches):
+                # 同理，避免None的情况
                 if i == j:
                     y = y + x[j]
                 else:

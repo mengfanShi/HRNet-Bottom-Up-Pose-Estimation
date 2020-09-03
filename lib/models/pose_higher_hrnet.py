@@ -41,6 +41,7 @@ class PoseHigherResolutionNet(nn.Module):
     def __init__(self, cfg, **kwargs):
         self.inplanes = 64
         extra = cfg.MODEL.EXTRA
+        # heatmap里面应该不包含Center map, 所以需要对其进行排查
         self.dim_heat = cfg.DATASET.NUM_JOINTS-1 if cfg.DATASET.WITH_CENTER else cfg.DATASET.NUM_JOINTS
         self.dim_reg = self.dim_heat * 2 + 1
         super(PoseHigherResolutionNet, self).__init__()
@@ -257,12 +258,18 @@ class PoseHigherResolutionNet(nn.Module):
 
     def _make_transition_layer(
             self, num_channels_pre_layer, num_channels_cur_layer):
+        """
+        函数作用在于衔接不同stage之间的特征转换
+        stage的不同可表现为分支数的不同
+        """
         num_branches_cur = len(num_channels_cur_layer)
         num_branches_pre = len(num_channels_pre_layer)
 
+        # 为了确保不同stage之间能够衔接上,完成通道之间的转换
         transition_layers = []
         for i in range(num_branches_cur):
             if i < num_branches_pre:
+            # 如果分支延续前一个stage,则需要完成通道数的匹配
                 if num_channels_cur_layer[i] != num_channels_pre_layer[i]:
                     transition_layers.append(nn.Sequential(
                         nn.Conv2d(num_channels_pre_layer[i],
@@ -276,6 +283,7 @@ class PoseHigherResolutionNet(nn.Module):
                 else:
                     transition_layers.append(None)
             else:
+            # 如果分支不延续前一个stage,则需按照分支的序号差别完成分辨率和通道数的匹配
                 conv3x3s = []
                 for j in range(i+1-num_branches_pre):
                     inchannels = num_channels_pre_layer[-1]
@@ -292,6 +300,10 @@ class PoseHigherResolutionNet(nn.Module):
 
     def _make_stage(self, layer_config, num_inchannels,
                     multi_scale_output=True):
+        """
+        函数作用是按照参数配置完成不同stage的组成
+        num_inchannels表明该stage的初始输入通道数
+        """
         num_modules = layer_config['NUM_MODULES']
         num_branches = layer_config['NUM_BRANCHES']
         num_blocks = layer_config['NUM_BLOCKS']
@@ -302,6 +314,7 @@ class PoseHigherResolutionNet(nn.Module):
         modules = []
         for i in range(num_modules):
             # multi_scale_output is only used last module
+            # 这里似乎由于multi_scale_output为True, reset永远取True
             if not multi_scale_output and i == num_modules - 1:
                 reset_multi_scale_output = False
             else:
