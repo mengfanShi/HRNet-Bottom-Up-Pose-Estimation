@@ -122,9 +122,11 @@ class PoseHigherResolutionNet(nn.Module):
         self.pretrained_layers = cfg['MODEL']['EXTRA']['PRETRAINED_LAYERS']
 
     def _make_final_layers(self, cfg, multi_output_config_heatmap, multi_output_config_regression):
+        # 预测Heatmap和Regression部分
         extra = cfg.MODEL.EXTRA
 
         final_layers = []
+        # for heatmap
         final_layers.append(nn.Conv2d(
             in_channels=multi_output_config_heatmap['NUM_CHANNELS'][0],
             out_channels=self.dim_heat,
@@ -161,6 +163,9 @@ class PoseHigherResolutionNet(nn.Module):
     def _make_layer(
             self, block, inplanes, planes, blocks, stride=1, 
             dilation=1):
+        """
+        依据给定的block类型和block数量组建layer
+        """
         downsample = None
         if stride != 1 or inplanes != planes * block.expansion:
             downsample = nn.Sequential(
@@ -180,6 +185,9 @@ class PoseHigherResolutionNet(nn.Module):
 
     def _make_multi_level_layer(
             self, layer_config):
+        """
+        依据配置要求组建不同dilation rate的layer
+        """
         multi_level_layers = []
 
         first_branch = self._make_layer(
@@ -200,6 +208,12 @@ class PoseHigherResolutionNet(nn.Module):
                 dilation=d
             )
 
+            '''
+            遍历所有新生成的分支,使得它们的初始参数一致
+            name_modules()函数返回的是网络各层的名称和模块内部构成
+            在这里module[0][0]是first_branch的各layer和layer内部函数名称
+            module[0][1]是first_branch的各layer具体内部构成及参数设置
+            '''
             for module in zip(first_branch.named_modules(), branch.named_modules()):
                 if 'conv' in module[0][0] and 'conv' in module[1][0]:
                     module[1][1].weight = module[0][1].weight
@@ -314,7 +328,8 @@ class PoseHigherResolutionNet(nn.Module):
         modules = []
         for i in range(num_modules):
             # multi_scale_output is only used last module
-            # 这里似乎由于multi_scale_output为True, reset永远取True
+            # 控制stage的最终输出有几个分支结果,若为True,则做fuse
+            # 只有满足设为False且处于模块最后一个的时候不做fuse;否则依然做特征融合
             if not multi_scale_output and i == num_modules - 1:
                 reset_multi_scale_output = False
             else:
@@ -381,31 +396,40 @@ class PoseHigherResolutionNet(nn.Module):
         final_output = []
         final_offset = []
 
+        # 修改通道数以匹配STN block
         x_cls = self.transition_cls(x)
 
+        # multi_level_layers是不同dilatin的STN block的集合
+        # final_output是在不同dilation的STN模块后预测的Heatmap集合
         for j in range(len(self.multi_level_layers_4x_heatmap)):
             final_output.append(self.final_layers[0](  \
                 self.multi_level_layers_4x_heatmap[j](x_cls)))
 
+        # 对图像特征进行Deconv提升分辨率后进行进一步的预测
         for i in range(self.num_deconvs):
+            # 是否将图像特征和Heatmap预测值Concate之后进行Deconv
             if self.deconv_config.CAT_OUTPUT[i]:
                 x_cls = torch.cat((x_cls, torch.mean(torch.stack(final_output), 0)), 1)
 
             x_cls = self.deconv_layers[i](x_cls)
+            # final_layers[i+2]是对Deconv后的特征图进行Heatmap的预测
             heatmap_2x = self.final_layers[i+2](x_cls)
         
+        # 将Heatmap与图像特征Concate后预测Regression
         x_reg = self.transition_reg(torch.cat([x, (torch.mean(torch.stack(final_output), 0))], 1))
 
+        # final_offset是在不同dilation的STN模块后预测的CenterMap和OffsetMap集合
         for j in range(len(self.multi_level_layers_4x_regression)):
             final_offset.append(self.final_layers[1]( \
                 self.multi_level_layers_4x_regression[j](x_reg)))
 
+        # 将Heatmap与CenterMap相结合,此时final_output是所有高斯核编码格式的结果集合
         for i in range(len(final_output)):
             final_output[i] = torch.cat([final_output[i], final_offset[0][:,-1:,:,:]], 1)
         
-        final_outputs.append(final_output)
-        final_outputs.append([heatmap_2x])
-        final_offsets.append([final_offset[0][:,:-1,:,:]])
+        final_outputs.append(final_output)                      # heatmap+centermap
+        final_outputs.append([heatmap_2x])                      # heatmap 2*
+        final_offsets.append([final_offset[0][:,:-1,:,:]])      # offsetmap
 
         return final_outputs, final_offsets
 

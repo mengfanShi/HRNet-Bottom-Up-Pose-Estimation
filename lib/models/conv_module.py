@@ -333,6 +333,7 @@ class HighResolutionModule(nn.Module):
 
         x_fuse = []
 
+        # 把所有branch的结果融合(ADD)
         for i in range(len(self.fuse_layers)):
             # 由于fuse_layer[0][0]为None,所以作为特殊情况提出
             y = x[0] if i == 0 else self.fuse_layers[i][0](x[0])
