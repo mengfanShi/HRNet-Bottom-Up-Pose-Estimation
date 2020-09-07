@@ -26,6 +26,7 @@ class HeatmapGenerator():
         '''
         sgm为关节点的标准差；ct_sgm为人体中心点的标准差
         bg_weight为背景元素所占的权重
+        TODO 可考虑将尺度因素引入到标准差计算中
         '''
         assert self.num_joints == joints.shape[1], \
             'the number of joints should be %d' % self.num_joints
@@ -122,7 +123,10 @@ class OffsetGenerator():
                             offset_x = pos_x - x
                             offset_y = pos_y - y
 
-                            # TODO 这里没有规划好offset_map重合后如何做，只是先到先得，可以规划改进
+                            # 这里规划offset_map重合后只保留尺度更小的人
+                            # 考虑如此可能是由于尺度小的人范围应该小一点精确一点
+                            # TODO 不应单从尺度问题上考虑，也需要考虑到距离的因素
+                            # 若距离中心点小于某个阈值，则不论尺度大小应该保留该人体的offset_map
                             if offset_map[idx*2, pos_y, pos_x] != 0 \
                                     or offset_map[idx*2+1, pos_y, pos_x] != 0:
                                 if area_map[pos_y, pos_x] < area[person_id]:
