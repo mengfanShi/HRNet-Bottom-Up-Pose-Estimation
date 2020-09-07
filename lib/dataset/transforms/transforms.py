@@ -19,6 +19,14 @@ from torchvision.transforms import functional as F
 
 
 class Compose(object):
+    '''
+    将多个操作打包成一起进行转换
+    Shape: 
+    图像 image [3, 128, 128]
+    人体分割 mask [output_size, 128, 128]
+    关节位置 joints [output_size, num_people, 17, 3]
+    检测框面积 area [num_people, 1]
+    '''
     def __init__(self, transforms):
         self.transforms = transforms
 
@@ -91,11 +99,13 @@ class RandomAffineTransform(object):
         self.min_scale = min_scale
         self.max_scale = max_scale
         self.scale_type = scale_type
+        # scale_type表明是以图像的长边或是短边为标准进行尺度计算和缩放
         self.max_translate = max_translate
 
+    # 根据中心点位置center, 尺度参数scale, 分辨率res, 旋转参数rot返回仿射变换矩阵
     def _get_affine_matrix(self, center, scale, res, rot=0):
         # Generate transformation matrix
-        h = 200 * scale
+        h = 200 * scale                     # 项目在尺度计算中以200作为单位长度(标准尺度)
         t = np.zeros((3, 3))
         t[0, 0] = float(res[1]) / h
         t[1, 1] = float(res[0]) / h
@@ -130,6 +140,8 @@ class RandomAffineTransform(object):
     def __call__(self, image, mask, joints, area):
         assert isinstance(mask, list)
         assert isinstance(joints, list)
+
+        # 有几个尺度的输出, 就有几个mask和joints
         assert len(mask) == len(joints)
         assert len(mask) == len(self.output_size)
 
@@ -175,7 +187,7 @@ class RandomAffineTransform(object):
             center, scale, (self.input_size, self.input_size), aug_rot
         )
         mat_input = mat_input[:2]
-        area = area*final_scale
+        area = area*final_scale             # 计算变换后的人体区域面积
         image = cv2.warpAffine(
             image, mat_input, (self.input_size, self.input_size)
         )

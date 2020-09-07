@@ -12,6 +12,7 @@ from __future__ import print_function
 from . import transforms as T
 
 
+# 翻转后的关节对应位置
 FLIP_CONFIG = {
     'COCO': [
         0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15
@@ -50,16 +51,14 @@ def build_transforms(cfg, is_train=True):
         output_size = [128]
         flip = 0
 
-    # coco_flip_index = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
-    # if cfg.DATASET.WITH_CENTER:
-        # coco_flip_index.append(17)
     if 'coco' in cfg.DATASET.DATASET:
         dataset_name = 'COCO'
     elif 'crowd_pose' in cfg.DATASET.DATASET:
         dataset_name = 'CROWDPOSE'
     else:
         raise ValueError('Please implement flip_index for new dataset: %s.' % cfg.DATASET.DATASET)
- 
+    
+    # 判断是否增加对人体中心点的编码和预测
     if cfg.DATASET.WITH_CENTER:
         coco_flip_index = FLIP_CONFIG[dataset_name + '_WITH_CENTER']
     else:
@@ -79,6 +78,7 @@ def build_transforms(cfg, is_train=True):
             T.RandomHorizontalFlip(coco_flip_index, output_size, flip),
             T.ToTensor(),
             T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            # TODO 在这里使用了ImagNet上的均值和标准差进行标准化，可以尝试修改
         ]
     )
 

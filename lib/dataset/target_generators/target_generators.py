@@ -23,6 +23,10 @@ class HeatmapGenerator():
         return g
 
     def __call__(self, joints, sgm, ct_sgm, bg_weight=1.0):
+        '''
+        sgm为关节点的标准差；ct_sgm为人体中心点的标准差
+        bg_weight为背景元素所占的权重
+        '''
         assert self.num_joints == joints.shape[1], \
             'the number of joints should be %d' % self.num_joints
 
@@ -39,12 +43,14 @@ class HeatmapGenerator():
                     sigma = sgm
                 else:
                     sigma = ct_sgm
-                if pt[2] > 0:
+                if pt[2] > 0:           # 值为0时表明图中关节点不可见
                     x, y = pt[0], pt[1]
                     if x < 0 or y < 0 or \
                             x >= self.output_res or y >= self.output_res:
                         continue
+                    # 对坐标位置进行一个筛选
 
+                    # 通过sigma计算一个辐射边界，边界内才有值，边界外认为没有影响
                     ul = int(np.floor(x - 3 * sigma - 1)
                              ), int(np.floor(y - 3 * sigma - 1))
                     br = int(np.ceil(x + 3 * sigma + 2)
@@ -59,10 +65,12 @@ class HeatmapGenerator():
                             joint_rg[sy-aa, sx -
                                      cc] = self.get_heat_val(sigma, sx, sy, x, y)
 
+                    # 关节热图的边界框内的值不能会负数, 且重叠位置使用最大值
                     hms_list[0][idx, aa:bb, cc:dd] = np.maximum(
                         hms_list[0][idx, aa:bb, cc:dd], joint_rg)
                     hms_list[1][0, aa:bb, cc:dd] = 1.
 
+        # 通过值的差别来得到没有关节影响辐射区域的位置
         hms_list[1][hms_list[1] == 2] = bg_weight
 
         return hms_list
@@ -88,6 +96,7 @@ class OffsetGenerator():
                             dtype=np.float32)
 
         for person_id, p in enumerate(joints):
+            # p[-1, 0]为人体中心点
             ct_x = int(p[-1, 0])
             ct_y = int(p[-1, 1])
             ct_v = int(p[-1, 2])
@@ -101,7 +110,8 @@ class OffsetGenerator():
                     if x < 0 or y < 0 or \
                             x >= self.output_w or y >= self.output_h:
                         continue
-
+                    
+                    # 计算影响区域，用矩阵框来代替圆形区域
                     start_x = max(int(ct_x - self.radius), 0)
                     start_y = max(int(ct_y - self.radius), 0)
                     end_x = min(int(ct_x + self.radius), self.output_w)
@@ -111,12 +121,16 @@ class OffsetGenerator():
                         for pos_y in range(start_y, end_y):
                             offset_x = pos_x - x
                             offset_y = pos_y - y
+
+                            # TODO 这里没有规划好offset_map重合后如何做，只是先到先得，可以规划改进
                             if offset_map[idx*2, pos_y, pos_x] != 0 \
                                     or offset_map[idx*2+1, pos_y, pos_x] != 0:
                                 if area_map[pos_y, pos_x] < area[person_id]:
                                     continue
                             offset_map[idx*2, pos_y, pos_x] = offset_x
                             offset_map[idx*2+1, pos_y, pos_x] = offset_y
+                            
+                            # weight_map是权值热图，依据尺度大小来进行赋值
                             weight_map[idx*2, pos_y, pos_x] = 1. / np.sqrt(area[person_id])
                             weight_map[idx*2+1, pos_y, pos_x] = 1. / np.sqrt(area[person_id])
                             area_map[pos_y, pos_x] = area[person_id]

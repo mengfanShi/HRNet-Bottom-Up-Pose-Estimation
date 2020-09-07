@@ -258,6 +258,8 @@ class PoseHigherResolutionNet(nn.Module):
         return nn.ModuleList(deconv_layers)
 
     def _get_deconv_cfg(self, deconv_kernel):
+        padding = 0
+        output_padding = 0
         if deconv_kernel == 4:
             padding = 1
             output_padding = 0
@@ -406,6 +408,7 @@ class PoseHigherResolutionNet(nn.Module):
                 self.multi_level_layers_4x_heatmap[j](x_cls)))
 
         # 对图像特征进行Deconv提升分辨率后进行进一步的预测
+        heatmap_2x = None
         for i in range(self.num_deconvs):
             # 是否将图像特征和Heatmap预测值Concate之后进行Deconv
             if self.deconv_config.CAT_OUTPUT[i]:
@@ -428,7 +431,8 @@ class PoseHigherResolutionNet(nn.Module):
             final_output[i] = torch.cat([final_output[i], final_offset[0][:,-1:,:,:]], 1)
         
         final_outputs.append(final_output)                      # heatmap+centermap
-        final_outputs.append([heatmap_2x])                      # heatmap 2*
+        if heatmap_2x is not None:
+            final_outputs.append([heatmap_2x])                  # heatmap 2*
         final_offsets.append([final_offset[0][:,:-1,:,:]])      # offsetmap
 
         return final_outputs, final_offsets

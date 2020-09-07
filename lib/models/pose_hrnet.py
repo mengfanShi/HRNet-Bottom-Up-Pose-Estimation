@@ -230,6 +230,8 @@ class PoseHigherResolutionNet(nn.Module):
         return nn.ModuleList(deconv_layers)
 
     def _get_deconv_cfg(self, deconv_kernel):
+        padding = 0
+        output_padding = 0
         if deconv_kernel == 4:
             padding = 1
             output_padding = 0
