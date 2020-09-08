@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 class CocoDataset(Dataset):
     """`MS Coco Detection <http://mscoco.org/dataset/#detections-challenge2016>`_ Dataset.
-
+    
     Args:
         root (string): Root directory where dataset is located to.
         dataset (string): Dataset name(train2017, val2017, test2017).
@@ -54,13 +54,14 @@ class CocoDataset(Dataset):
         self.bbox_preds = None
         self.get_rescore_data = get_rescore_data
         if bbox_file is not None:
+        # 是否在结果评估中引入bbox的信息
             with open(bbox_file) as f:
                 data = json.load(f)
             coco_dt = self.coco.loadRes(data)
             coco_eval = COCOeval(self.coco, coco_dt, 'keypoints')
             coco_eval._prepare()
             self.bbox_preds = coco_eval._dts
-
+  
         cats = [cat['name']
                 for cat in self.coco.loadCats(self.coco.getCatIds())]
         self.classes = ['__background__'] + cats

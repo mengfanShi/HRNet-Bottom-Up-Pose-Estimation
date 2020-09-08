@@ -24,6 +24,7 @@ from .target_generators import OffsetGenerator
 
 
 def build_dataset(cfg, is_train):
+    # is_train判断是否训练，只有在训练时候才会对数据进行转换处理
     transforms = build_transforms(cfg, is_train)
 
     _HeatmapGenerator = HeatmapGenerator
@@ -47,6 +48,8 @@ def build_dataset(cfg, is_train):
 
     dataset_name = cfg.DATASET.TRAIN if is_train else cfg.DATASET.TEST
 
+    # eval()函数用来执行一个字符串表达式，并返回表达式的值
+    # 在这里eval(cfg.DATASET.DATASET)返回的是数据集的名字coco_kpt或者crowd_pose_kpt
     dataset = eval(cfg.DATASET.DATASET)(
         cfg,
         dataset_name,
@@ -91,6 +94,7 @@ def make_dataloader(cfg, is_train=True, distributed=False):
 
 
 def make_test_dataloader(cfg):
+    # 生成测试集的数据集和Dataloader
     transforms = None
     dataset = eval(cfg.DATASET.DATASET_TEST)(
         cfg.DATASET.ROOT,

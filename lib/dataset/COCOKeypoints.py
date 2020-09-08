@@ -22,6 +22,7 @@ from .target_generators import HeatmapGenerator
 logger = logging.getLogger(__name__)
 
 
+# 训练时使用
 class CocoKeypoints(CocoDataset):
     def __init__(self,
                  cfg,
