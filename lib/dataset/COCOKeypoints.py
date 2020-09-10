@@ -71,6 +71,7 @@ class CocoKeypoints(CocoDataset):
     def __getitem__(self, idx):
         img, anno = super().__getitem__(idx)
 
+        # 一般情况下mask返回的整张图片的区域部分
         mask = self.get_mask(anno, idx)
 
         anno = [
@@ -92,12 +93,14 @@ class CocoKeypoints(CocoDataset):
                 img, mask_list, joints_list, area
             )
 
+        # 生成不同尺度的GT
         for scale_id in range(self.num_scales):
             scaled_target = []
             scaled_mask = []
             mask = mask_list[scale_id].copy()
 
             for i, sgm in enumerate(self.sigma[scale_id]):
+                # 可依据尺度的不同来分配不同的Heatmap的sigma
                 target_t, ignored_t = self.heatmap_generator[scale_id](
                     joints_list[scale_id],
                     sgm,
@@ -132,6 +135,7 @@ class CocoKeypoints(CocoDataset):
                 area[i, 0] = obj['bbox'][2]*obj['bbox'][3]
 
             if self.with_center:
+                # 对区域面积进行一个判断并做一个筛选,面积过小的忽略不计
                 if obj['area'] < 32**2:
                     joints[i, -1, 2] = 0
                     continue
@@ -140,6 +144,8 @@ class CocoKeypoints(CocoDataset):
                 center_y = (2*bbox[1] + bbox[3]) / 2.
                 joints_sum = np.sum(joints[i, :-1, :2], axis=0)
                 num_vis_joints = len(np.nonzero(joints[i, :-1, 2])[0])
+
+                # 判断是否使用bbox中心点或者是标注关节位置的平均值作为人体中心点
                 if self.use_bbox_center or num_vis_joints <= 0:
                     joints[i, -1, 0] = center_x
                     joints[i, -1, 1] = center_y
@@ -156,7 +162,13 @@ class CocoKeypoints(CocoDataset):
         m = np.zeros((img_info['height'], img_info['width']))
 
         for obj in anno:
+            # 一般来说，挑选的训练图像不会经过此判断循环
             if obj['iscrowd']:
+                '''
+                iscrowd属性表示的是一个对象还是多个对象;
+                如果iscrowd=0,那么segmentation是polygon格式;
+                如果iscrowd=1,那么segmentation是RLE格式
+                '''
                 rle = pycocotools.mask.frPyObjects(
                     obj['segmentation'], img_info['height'], img_info['width'])
                 m += pycocotools.mask.decode(rle)
@@ -165,7 +177,8 @@ class CocoKeypoints(CocoDataset):
                     obj['segmentation'], img_info['height'], img_info['width'])
                 for rle in rles:
                     m += pycocotools.mask.decode(rle)
-
+        
+        # 一般的训练图像返回的是整张图片的mask
         return m < 0.5
 
     def _init_check(self, heatmap_generator):

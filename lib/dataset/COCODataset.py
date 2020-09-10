@@ -37,7 +37,7 @@ class CocoDataset(Dataset):
         transform (callable, optional): A function/transform that  takes in an opencv image
             and returns a transformed version. E.g, ``transforms.ToTensor``
         target_transform (callable, optional): A function/transform that takes in the
-            target and transforms it.
+            target and transforms it. target is the object returned by ``coco.loadAnns``.
     """
 
     def __init__(self, root, dataset, data_format, num_joints, get_rescore_data, transform=None,
@@ -61,7 +61,8 @@ class CocoDataset(Dataset):
             coco_eval = COCOeval(self.coco, coco_dt, 'keypoints')
             coco_eval._prepare()
             self.bbox_preds = coco_eval._dts
-  
+
+        # 读取COCO Dataset里面的所有类别并为接下来的分类做准备
         cats = [cat['name']
                 for cat in self.coco.loadCats(self.coco.getCatIds())]
         self.classes = ['__background__'] + cats
@@ -153,6 +154,10 @@ class CocoDataset(Dataset):
         return len(self.ids)
 
     def get_joints(self, anno):
+        '''
+        将标注文件里面的keypoints标注按人数和关节种类进行标注
+        这里默认以bbox的中心点对人体中心点进行了标注
+        '''
         num_people = len(anno)
         area = np.zeros((num_people, 1))
         joints = np.zeros((num_people, self.num_joints, 3))
@@ -163,10 +168,14 @@ class CocoDataset(Dataset):
 
             area[i, 0] = obj['bbox'][2]*obj['bbox'][3]
 
+            # 舍弃对小尺度人群的训练
+            # TODO 通过设定面积阈值能够分割出适应要求的子数据集进行训练
             if obj['area'] < 32**2:
+                # 这里貌似默认采用了CenterMap进行训练，所以会对中心点操作
                 joints[i, -1, 2] = 0
                 continue
             bbox = obj['bbox']
+            # 运用bbox的中心带作为人体中心点标注
             center_x = (2*bbox[0] + bbox[2]) / 2.
             center_y = (2*bbox[1] + bbox[3]) / 2.
             joints[i, -1, 0] = center_x
@@ -176,7 +185,7 @@ class CocoDataset(Dataset):
         return joints, area
 
     def get_human_mask(self, anno, img_h, img_w):
-
+        # 利用bbox来生成人体的掩码mask
         human_mask = np.zeros((img_h, img_w))
         for _, obj in enumerate(anno):
             box = obj['bbox']
@@ -203,7 +212,9 @@ class CocoDataset(Dataset):
     def processKeypoints(self, keypoints):
         tmp = keypoints.copy()
         if keypoints[:, 2].max() > 0:
+            # 计算可见关节点坐标的均值坐标
             p = keypoints[keypoints[:, 2] > 0][:, :2].mean(axis=0)
+            # TODO 均值坐标似乎没用上，函数操作无意义
             num_keypoints = keypoints.shape[0]
             for i in range(num_keypoints):
                 tmp[i][0:3] = [
