@@ -136,6 +136,7 @@ class CocoKeypoints(CocoDataset):
 
             if self.with_center:
                 # 对区域面积进行一个判断并做一个筛选,面积过小的忽略不计
+                # TODO 通过设定面积阈值能够分割出适应要求的子数据集进行训练
                 if obj['area'] < 32**2:
                     joints[i, -1, 2] = 0
                     continue

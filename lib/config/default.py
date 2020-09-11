@@ -15,7 +15,8 @@ import os
 
 from yacs.config import CfgNode as CN
 
-
+# _C中申明过后的变量才能被赋值和修改，如果_C中没有某个变量，而yaml中有，那就会报错，因为该变量未能事先申明
+# _C的new_allowed属性是声明了父类向量后允许子类创建，可以不一一声明
 _C = CN()
 
 _C.OUTPUT_DIR = ''

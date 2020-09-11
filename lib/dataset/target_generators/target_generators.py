@@ -26,7 +26,7 @@ class HeatmapGenerator():
         '''
         sgm为关节点的标准差；ct_sgm为人体中心点的标准差
         bg_weight为背景元素所占的权重
-        TODO 可考虑将尺度因素引入到标准差计算中
+        TODO 可考虑将尺度因素引入到标准差计算中,参考之前设定的公式
         '''
         assert self.num_joints == joints.shape[1], \
             'the number of joints should be %d' % self.num_joints
