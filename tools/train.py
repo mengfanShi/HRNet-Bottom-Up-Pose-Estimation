@@ -79,6 +79,7 @@ def main():
     args = parse_args()
     update_config(cfg, args)
 
+    # 所有配置更新完毕后,将节点的序号传递给配置文件
     cfg.defrost()
     cfg.RANK = args.rank
     cfg.freeze()
@@ -94,11 +95,14 @@ def main():
         warnings.warn('You have chosen a specific GPU. This will completely '
                       'disable data parallelism.')
 
+    # 得到总的节点数目
     if args.dist_url == "env://" and args.world_size == -1:
         args.world_size = int(os.environ["WORLD_SIZE"])
 
     args.distributed = args.world_size > 1 or cfg.MULTIPROCESSING_DISTRIBUTED
 
+    # 检测硬件设备上有多少块GPU,基于此配置相应的进程数目
+    # 为了在指定GPU块上进行训练,可用CUDA_VISIBLE_DEVICES进行手动屏蔽
     ngpus_per_node = torch.cuda.device_count()
     if cfg.MULTIPROCESSING_DISTRIBUTED:
         # Since we have ngpus_per_node processes per node, the total world_size
@@ -141,6 +145,7 @@ def main_worker(
         if cfg.MULTIPROCESSING_DISTRIBUTED:
             # For multiprocessing distributed training, rank needs to be the
             # global rank among all the processes
+            # 通过节点序号来计算进程在所有进程之中的序号
             args.rank = args.rank * ngpus_per_node + gpu
         print('Init process group: dist_url: {}, world_size: {}, rank: {}'.
               format(args.dist_url, args.world_size, args.rank))
@@ -171,6 +176,7 @@ def main_worker(
             final_output_dir
         )
 
+    # 利用tensorboard可视化结果
     writer_dict = {
         'writer': SummaryWriter(logdir=tb_log_dir),
         'train_global_steps': 0,
@@ -255,6 +261,7 @@ def main_worker(
         do_train(cfg, model, train_loader, loss_factory, optimizer, epoch,
                  final_output_dir, tb_log_dir, writer_dict)
 
+        # TODO 保存性能表现最优的model
         perf_indicator = epoch
         if perf_indicator >= best_perf:
             best_perf = perf_indicator

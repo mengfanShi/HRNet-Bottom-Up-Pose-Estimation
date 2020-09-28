@@ -99,6 +99,7 @@ def do_train(cfg, model, data_loader, loss_factory, optimizer, epoch,
                     offset_loss_meter[idx].val,
                     global_steps
                 )
+            # 每经过PRINT_FREQ个batch,train_global_steps加1
             writer_dict['train_global_steps'] = global_steps + 1
 
             prefix = '{}_{}'.format(os.path.join(output_dir, 'train'), i)
