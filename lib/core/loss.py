@@ -45,6 +45,7 @@ class OffsetsLoss(nn.Module):
     def smooth_l1_loss(self, pred, gt, beta=1. / 9):
         l1_loss = torch.abs(pred - gt)
         cond = l1_loss < beta
+        # 第一个是判断条件，第二个是符合条件的设置值，第三个是不满足条件的设置值
         loss = torch.where(cond, 0.5*l1_loss**2/beta, l1_loss-0.5*beta)
         return loss
 
