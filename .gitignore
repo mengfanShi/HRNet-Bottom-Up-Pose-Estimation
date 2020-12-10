@@ -5,7 +5,8 @@ log/
 model/
 crowdpose-api/
 cocoapi/
-
+output*/
+picture*/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

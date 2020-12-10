@@ -37,6 +37,56 @@ class HeatmapLoss(nn.Module):
         loss = loss.mean(dim=3).mean(dim=2).mean(dim=1)
         return loss
 
+############################## Focal L2 Loss######################################
+class FocalL2Loss(nn.Module):
+    """
+    Compute focal l2 loss between predict and groundtruth
+    :param thre: the threshold to distinguish between the foreground
+                 heatmap pixels and the background heatmap pixels
+    :param alpha beta: compensation factors to reduce the punishment of easy
+                 samples (both easy foreground pixels and easy background pixels) 
+    """
+    def __init__(self, thre=0.01, alpha=0.1, beta=0.02):
+        super().__init__()
+        self.thre = thre
+        self.alpha = alpha
+        self.beta = beta
+    
+    def forward(self, pred, gt, mask):
+        assert pred.size() == gt.size()
+        st = torch.where(torch.ge(gt, self.thre), pred - self.alpha, 1 - pred - self.beta)
+        factor = torch.abs(1. - st)
+        loss = ((pred - gt)**2 * factor) * mask
+        loss = loss.mean(dim=3).mean(dim=2).mean(dim=1)
+        return loss
+#####################################################################################
+
+############################## Weight Loss######################################
+class WeightLoss(nn.Module):
+    """
+    Compute weight loss between predict and groundtruth
+    :param thre: the threshold to distinguish between the foreground
+                 heatmap pixels and the background heatmap pixels
+    :param alpha beta: compensation factors to reduce the punishment of easy
+                 samples (both easy foreground pixels and easy background pixels) 
+    """
+    def __init__(self, thre=0.01, alpha1=0.7, beta1=-2, alpha2=-0.5, beta2=1.75):
+        super().__init__()
+        self.thre = thre
+        self.alpha1 = alpha1
+        self.alpha2 = alpha2
+        self.beta1 = beta1
+        self.beta2 = beta2
+    
+    def forward(self, pred, gt, mask):
+        assert pred.size() == gt.size()
+        factor = torch.where(torch.ge(gt, self.thre), -1 * torch.exp(pred + self.alpha2) + self.beta2,
+                            torch.exp(pred + self.alpha1) + self.beta1)
+        factor = torch.abs(factor)
+        loss = ((pred - gt)**2 * factor) * mask
+        loss = loss.mean(dim=3).mean(dim=2).mean(dim=1)
+        return loss
+#####################################################################################
 
 class OffsetsLoss(nn.Module):
     def __init__(self):
@@ -66,13 +116,30 @@ class MultiLossFactory(nn.Module):
 
         self.num_joints = cfg.MODEL.NUM_JOINTS
         self.num_stages = cfg.LOSS.NUM_STAGES
+        #########################################
+        focal_factor = cfg.LOSS.FOCAL_LOSS_FACTOR
+        self.use_middle = cfg.LOSS.HEATMAP_MIDDLE_LOSS
+        self.heatmap_middle_loss = \
+            nn.ModuleList(
+                [
+                    # FocalL2Loss(focal_factor[0], focal_factor[1], focal_factor[2])
+                    # if cfg.LOSS.USE_FOCAL_LOSS else HeatmapLoss()
+                    WeightLoss() if cfg.LOSS.USE_WEIGHT_LOSS else HeatmapLoss()
+                    if cfg.LOSS.HEATMAP_MIDDLE_LOSS else None
+                ]
+            )
+        #########################################
 
         self.heatmaps_loss = \
             nn.ModuleList(
                 [
-                    HeatmapLoss()
+                    #######################################################
+                    # FocalL2Loss(focal_factor[0], focal_factor[1], focal_factor[2]) 
+                    # if cfg.LOSS.USE_FOCAL_LOSS else HeatmapLoss()
+                    WeightLoss() if cfg.LOSS.USE_WEIGHT_LOSS else HeatmapLoss()
                     if with_heatmaps_loss else None
                     for with_heatmaps_loss in cfg.LOSS.WITH_HEATMAPS_LOSS
+                    #######################################################
                 ]
             )
         self.heatmaps_loss_factor = cfg.LOSS.HEATMAPS_LOSS_FACTOR
@@ -88,7 +155,7 @@ class MultiLossFactory(nn.Module):
         self.offsets_loss_factor = cfg.LOSS.OFFSETS_LOSS_FACTOR
 
     def forward(self, outputs, poffsets, heatmaps,
-                masks, offsets, offset_w):
+                masks, offsets, offset_w, middle_output=None):
         heatmaps_losses = []
         offsets_losses = []
         for idx in range(len(outputs)):
@@ -149,7 +216,23 @@ class MultiLossFactory(nn.Module):
             else:
                 offsets_losses.append(None)
 
-        return heatmaps_losses, offsets_losses
+        ################################################################
+        middle_losses = None
+        if middle_output is not None:
+            if self.heatmap_middle_loss[0]:
+                heatmap_pred = middle_output
+                heatmap_gt = heatmaps[0][0][:, :heatmap_pred.shape[1]]
+                mask = masks[0][0].expand_as(heatmap_gt)
+                heatmap_loss = self.heatmap_middle_loss[0](
+                    heatmap_pred, heatmap_gt, mask
+                )
+                middle_losses = heatmap_loss
+
+        if self.use_middle:
+            return heatmaps_losses, offsets_losses, middle_losses
+        else:
+            return heatmaps_losses, offsets_losses
+        ################################################################
 
     def _init_check(self, cfg):
         assert isinstance(cfg.LOSS.WITH_HEATMAPS_LOSS, (list, tuple)), \

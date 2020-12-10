@@ -33,7 +33,6 @@ def do_train(cfg, model, data_loader, loss_factory, optimizer, epoch,
     for i, (images, heatmaps, masks, offsets, weights) in enumerate(data_loader):
         data_time.update(time.time() - end)
 
-        outputs, poffsets = model(images)
 
         heatmaps = [list(map(lambda x: x.cuda(non_blocking=True), heatmap))
                     for heatmap in heatmaps]
@@ -44,9 +43,19 @@ def do_train(cfg, model, data_loader, loss_factory, optimizer, epoch,
         offset_weights = [
             list(map(lambda x: x.cuda(non_blocking=True), weight)) for weight in weights]
 
-        heatmaps_losses, offset_losses = \
-            loss_factory(outputs, poffsets, heatmaps,
-                         masks, offsets, offset_weights)
+        ####################################################################
+        if cfg.LOSS.HEATMAP_MIDDLE_LOSS:
+            outputs, poffsets, middle_output = model(images)
+            heatmaps_losses, offset_losses, middle_losses = \
+                loss_factory(outputs, poffsets, heatmaps,
+                             masks, offsets, offset_weights, middle_output)
+        else:
+            outputs, poffsets = model(images)
+            heatmaps_losses, offset_losses = \
+                loss_factory(outputs, poffsets, heatmaps,
+                             masks, offsets, offset_weights)
+        ####################################################################
+
 
         loss = 0
         for idx in range(cfg.LOSS.NUM_STAGES):
@@ -62,7 +71,13 @@ def do_train(cfg, model, data_loader, loss_factory, optimizer, epoch,
                     offset_loss.item(), images.size(0)
                 )
                 loss = loss + offset_loss
-
+        
+        ########################################################################
+        if cfg.LOSS.HEATMAP_MIDDLE_LOSS:
+            if middle_losses is not None:
+                loss = loss + middle_losses.mean(dim=0)
+        ########################################################################
+        
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()

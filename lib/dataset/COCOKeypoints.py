@@ -53,6 +53,11 @@ class CocoKeypoints(CocoDataset):
         self.center_sigma = cfg.DATASET.CENTER_SIGMA
         self.sigma = cfg.DATASET.SIGMA
         self.bg_weight = cfg.DATASET.BG_WEIGHT
+        #######################################################################
+        self.scale_aware_sigma = cfg.DATASET.SCALE_AWARE_SIGMA
+        self.inter_sigma = cfg.DATASET.INTER_SIGMA
+        self.intra_sigma = cfg.DATASET.INTRA_SIGMA
+        #######################################################################
 
         self.use_mask = cfg.DATASET.USE_MASK
         self.use_bbox_center = cfg.DATASET.USE_BBOX_CENTER
@@ -123,7 +128,12 @@ class CocoKeypoints(CocoDataset):
     def get_joints(self, anno):
         num_people = len(anno)
         area = np.zeros((num_people, 1))
-        joints = np.zeros((num_people, self.num_joints, 3))
+        ###########################################################################
+        if self.scale_aware_sigma:
+            joints = np.zeros((num_people, self.num_joints, 4))
+        else:
+            joints = np.zeros((num_people, self.num_joints, 3))
+        ###########################################################################
 
         for i, obj in enumerate(anno):
             joints[i, :self.num_joints_without_center, :3] = \
@@ -153,6 +163,42 @@ class CocoKeypoints(CocoDataset):
                 else:
                     joints[i, -1, :2] = joints_sum / num_vis_joints
                 joints[i, -1, 2] = 1
+
+            ###########################  人体外部尺度  ################################
+            if self.scale_aware_sigma:
+            # 人体外部尺度
+                intersigma = 1.
+                intrasigma = 2
+                if self.inter_sigma:
+                    box = obj['bbox']
+                    intersize = max(box[2], box[3])
+                    base_intersize = 128
+                    base_intersigma = 2
+                    # 线性变化
+                    intersigma = intersize / base_intersize * base_intersigma
+                    # 非线性变化
+                    x = intersize / base_intersize
+                    intersigma = (np.exp(x) - np.exp(-x)) / (np.exp(x) + np.exp(-x)) * base_intersigma
+
+            # 人体内部尺度
+                if self.intra_sigma:
+                    # intrasize = np.array([.026, .025, .025, .035, .035, .079, .079, .072, .072,
+                    #             .062, .062, .107, .107, .087, .087, .089, .089])
+                    # 截断设置
+                    # intrasize = np.array([.072, .072, .072, .072, .072, .079, .079, .072, .072,
+                    #              .072, .072, .107, .107, .087, .087, .089, .089])
+                    intrasize = np.array([.062, .062, .062, .062, .062, .079, .079, .072, .072,
+                                .062, .062, .107, .107, .087, .087, .089, .089])
+                    base_intrasize = 0.062
+                    base_intrasigma = 2
+                    # for i in range(len(intrasize)):
+                    #     if base_intrasize > intrasize[i]:
+                    #         intrasize[i] = base_intrasize
+                    intrasigma = intrasize / base_intrasize * base_intrasigma
+
+            # 人体综合尺度
+                joints[i, :self.num_joints_without_center, 3] = intersigma * intrasigma
+            ###########################  人体内部尺度  ################################
 
         return joints, area
 

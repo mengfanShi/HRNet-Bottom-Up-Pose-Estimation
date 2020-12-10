@@ -12,7 +12,7 @@ import numpy as np
 
 
 class HeatmapGenerator():
-    def __init__(self, output_res, num_joints):
+    def __init__(self, output_res, num_joints, use_jnt=False):
         self.output_res = output_res
         self.num_joints = num_joints
 
@@ -75,6 +75,87 @@ class HeatmapGenerator():
         hms_list[1][hms_list[1] == 2] = bg_weight
 
         return hms_list
+
+
+###########################################################################################
+class ScaleAwareHeatmapGenerator():
+    def __init__(self, output_res, num_joints, use_jnt=True):
+        self.output_res = output_res
+        self.num_joints = num_joints
+        self.use_jnt = use_jnt
+        self.jnt_thr = 0.01
+        self.use_int = True
+
+    def get_heat_val(self, sigma, x, y, x0, y0):
+
+        g = np.exp(- ((x - x0) ** 2 + (y - y0) ** 2) / (2 * sigma ** 2))
+
+        return g
+
+    def __call__(self, joints, sgm, ct_sgm, bg_weight=1.0):
+        '''
+        sgm为关节点的标准差；ct_sgm为人体中心点的标准差
+        bg_weight为背景元素所占的权重
+        TODO 可考虑将尺度因素引入到标准差计算中,参考之前设定的公式
+        '''
+        assert self.num_joints == joints.shape[1], \
+            'the number of joints should be %d' % self.num_joints
+
+        hms = np.zeros((self.num_joints, self.output_res, self.output_res),
+                       dtype=np.float32)
+        ignored_hms = 2*np.ones((1, self.output_res, self.output_res),
+                                dtype=np.float32)
+
+        hms_list = [hms, ignored_hms]
+
+        for p in joints:
+            for idx, pt in enumerate(p):
+                if idx < 17:
+                    #####################################################
+                    sigma = pt[3]
+                    #####################################################
+                else:
+                    sigma = ct_sgm
+                if pt[2] > 0:           # 值为0时表明图中关节点不可见
+                    x, y = pt[0], pt[1]
+                    if x < 0 or y < 0 or \
+                            x >= self.output_res or y >= self.output_res:
+                        continue
+                    # 对坐标位置进行一个筛选
+                    if self.use_jnt:
+                        ################### JNT ######################
+                        radius = np.sqrt(np.log(1 / self.jnt_thr) * 2 * sigma ** 2)
+                        if self.use_int:
+                            radius = int(np.round(radius))  # 取整
+                        
+                        ul = int(np.round(x - radius - 1)), int(np.round(y - radius - 1))
+                        br = int(np.round(x + radius + 2)), int(np.round(y + radius + 2))
+                        ################### JNT ######################
+                    else:
+                        ################### 3sigma ######################
+                        ul = int(np.floor(x - 3 * sigma - 1)), int(np.floor(y - 3 * sigma - 1))
+                        br = int(np.ceil(x + 3 * sigma + 2)), int(np.ceil(y + 3 * sigma + 2))
+                        ################### 3sigma ######################
+
+                    cc, dd = max(0, ul[0]), min(br[0], self.output_res)
+                    aa, bb = max(0, ul[1]), min(br[1], self.output_res)
+
+                    joint_rg = np.zeros((bb-aa, dd-cc))
+                    for sy in range(aa, bb):
+                        for sx in range(cc, dd):
+                            joint_rg[sy-aa, sx -
+                                     cc] = self.get_heat_val(sigma, sx, sy, x, y)
+
+                    # 关节热图的边界框内的值不能会负数, 且重叠位置使用最大值
+                    hms_list[0][idx, aa:bb, cc:dd] = np.maximum(
+                        hms_list[0][idx, aa:bb, cc:dd], joint_rg)
+                    hms_list[1][0, aa:bb, cc:dd] = 1.
+
+        # 通过值的差别来得到没有关节影响辐射区域的位置
+        hms_list[1][hms_list[1] == 2] = bg_weight
+
+        return hms_list
+##########################################################################################
 
 
 class OffsetGenerator():

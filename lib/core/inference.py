@@ -65,7 +65,12 @@ def get_multi_stage_outputs(
     reg_kpts_list = []
 
     # forward
-    all_outputs, all_offsets = model(image)
+    ##########################################################################
+    if cfg.LOSS.HEATMAP_MIDDLE_LOSS:
+        all_outputs, all_offsets, _ = model(image)
+    else:
+        all_outputs, all_offsets = model(image)
+    ##########################################################################
     outputs = [get_one_stage_outputs(out)
                for out in all_outputs]
     offset = all_offsets[0][-1]
@@ -95,10 +100,20 @@ def get_multi_stage_outputs(
         new_image[:, :, :, :-3] = image[:, :, :, 3:]
         new_image_2x[:, :, :, :-1] = image[:, :, :, 1:]
 
-        all_outputs_flip, all_offsets_flip = model(new_image)
+        ##########################################################################
+        if cfg.LOSS.HEATMAP_MIDDLE_LOSS:
+            all_outputs_flip, all_offsets_flip, _ = model(new_image)
+        else:
+            all_outputs_flip, all_offsets_flip = model(new_image)
+        ##########################################################################
         outputs_flip = [get_one_stage_outputs(all_outputs_flip[0])]
         if len(cfg.DATASET.OUTPUT_SIZE) > 1:
-            all_outputs_flip, _ = model(new_image_2x)
+            ##########################################################################
+            if cfg.LOSS.HEATMAP_MIDDLE_LOSS:
+                all_outputs_flip, _, _ = model(new_image_2x)
+            else:
+                all_outputs_flip, _ = model(new_image_2x)
+            ##########################################################################
             outputs_flip.append(get_one_stage_outputs(all_outputs_flip[1]))
 
         offset_flip = all_offsets_flip[0][-1]

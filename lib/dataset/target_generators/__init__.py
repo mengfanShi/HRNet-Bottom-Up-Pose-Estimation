@@ -6,6 +6,7 @@
 
 from .target_generators import HeatmapGenerator
 from .target_generators import OffsetGenerator
+from .target_generators import ScaleAwareHeatmapGenerator
 
 
-__all__ = ['HeatmapGenerator', 'OffsetGenerator']
+__all__ = ['HeatmapGenerator', 'OffsetGenerator', 'ScaleAwareHeatmapGenerator']

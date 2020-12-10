@@ -24,6 +24,7 @@ import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
 from tensorboardX import SummaryWriter
+import numpy as np
 
 import _init_paths
 import models
@@ -228,7 +229,10 @@ def main_worker(
     )
     logger.info(train_loader.dataset)
 
+    ##############################################################################
     best_perf = -1
+    # best_perf = np.inf
+    ##############################################################################
     best_model = False
     last_epoch = -1
     optimizer = get_optimizer(cfg, model)

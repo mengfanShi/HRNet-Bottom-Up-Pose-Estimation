@@ -158,90 +158,172 @@ def main():
     all_scores = []
 
     pbar = tqdm(total=len(test_dataset)) if cfg.TEST.LOG_PROGRESS else None
-    for i, (images, joints, masks, areas) in enumerate(data_loader):
-        assert 1 == images.size(0), 'Test batch size should be 1'
-
-        image = images[0].cpu().numpy()
-        joints = joints[0].cpu().numpy()
-        mask = masks[0].cpu().numpy()
-        area = areas[0].cpu().numpy()
-        # size at scale 1.0
-        base_size, center, scale = get_multi_scale_size(
-            image, cfg.DATASET.INPUT_SIZE, 1.0, 1.0
-        )
-
-        with torch.no_grad():
-            heatmap_fuse = 0
-            final_heatmaps = None
-            final_kpts = None
-            input_size = cfg.DATASET.INPUT_SIZE
-
-            for idx, s in enumerate(sorted(cfg.TEST.SCALE_FACTOR, reverse=True)):
-
-                image_resized, joints_resized, _, center, scale = resize_align_multi_scale(
-                    image, joints, mask, input_size, s, 1.0
-                )
-
-                image_resized = transforms(image_resized)
-                image_resized = image_resized.unsqueeze(0).cuda()
-
-                outputs, heatmaps, kpts = get_multi_stage_outputs(
-                    cfg, model, image_resized, cfg.TEST.FLIP_TEST
-                )
-                final_heatmaps, final_kpts = aggregate_results(
-                    cfg, final_heatmaps, final_kpts, heatmaps, kpts
-                )
-
-            for heatmap in final_heatmaps:
-                heatmap_fuse += up_interpolate(
-                    heatmap,
-                    size=(base_size[1], base_size[0]),
-                    mode='bilinear'
-                )
-            heatmap_fuse = heatmap_fuse/float(len(final_heatmaps))
-
-            # for only pred kpts
-            grouped, scores = parser.parse(
-                final_heatmaps, final_kpts, heatmap_fuse[0], use_heatmap=False
+    if 'test' in cfg.DATASET.TEST:
+        # TODO 加入test的代码
+        for i, images in enumerate(data_loader):
+            assert 1 == images.size(0), 'Test batch size should be 1'
+            image = images[0].cpu().numpy()
+            base_size, center, scale = get_multi_scale_size(
+                image, cfg.DATASET.INPUT_SIZE, 1.0, 1.0
             )
 
-            if len(scores) == 0:
-                all_reg_preds.append([])
-                all_reg_scores.append([])
-            else:
+            with torch.no_grad():
+                heatmap_fuse = 0
+                final_heatmaps = None
+                final_kpts = None
+                input_size = cfg.DATASET.INPUT_SIZE
+
+                for idx, s in enumerate(sorted(cfg.TEST.SCALE_FACTOR, reverse=True)):
+
+                    image_resized, center, scale = resize_align_multi_scale(
+                        image, None, None, input_size, s, 1.0
+                    )
+
+                    image_resized = transforms(image_resized)
+                    image_resized = image_resized.unsqueeze(0).cuda()
+
+                    outputs, heatmaps, kpts = get_multi_stage_outputs(
+                        cfg, model, image_resized, cfg.TEST.FLIP_TEST
+                    )
+                    final_heatmaps, final_kpts = aggregate_results(
+                        cfg, final_heatmaps, final_kpts, heatmaps, kpts
+                    )
+
+                for heatmap in final_heatmaps:
+                    heatmap_fuse += up_interpolate(
+                        heatmap,
+                        size=(base_size[1], base_size[0]),
+                        mode='bilinear'
+                    )
+                heatmap_fuse = heatmap_fuse/float(len(final_heatmaps))
+
+                # for only pred kpts
+                grouped, scores = parser.parse(
+                    final_heatmaps, final_kpts, heatmap_fuse[0], use_heatmap=False
+                )
+
+                if len(scores) == 0:
+                    all_reg_preds.append([])
+                    all_reg_scores.append([])
+                else:
+                    final_results = get_final_preds(
+                        grouped, center, scale,
+                        [heatmap_fuse.size(-1),heatmap_fuse.size(-2)]
+                    )
+                    if cfg.RESCORE.USE:
+                        scores = rescore_valid(cfg, final_results, scores)
+                    all_reg_preds.append(final_results)
+                    all_reg_scores.append(scores)
+
+                # for pred kpts and pred heatmaps
+                grouped, scores = parser.parse(
+                    final_heatmaps, final_kpts, heatmap_fuse[0], use_heatmap=True
+                )
+                if len(scores) == 0:
+                    all_preds.append([])
+                    all_scores.append([])
+                    if cfg.TEST.LOG_PROGRESS:
+                        pbar.update()
+                    continue
+
                 final_results = get_final_preds(
                     grouped, center, scale,
                     [heatmap_fuse.size(-1),heatmap_fuse.size(-2)]
                 )
+
                 if cfg.RESCORE.USE:
                     scores = rescore_valid(cfg, final_results, scores)
-                all_reg_preds.append(final_results)
-                all_reg_scores.append(scores)
 
-            # for pred kpts and pred heatmaps
-            grouped, scores = parser.parse(
-                final_heatmaps, final_kpts, heatmap_fuse[0], use_heatmap=True
+                all_preds.append(final_results)
+                all_scores.append(scores)
+
+            if cfg.TEST.LOG_PROGRESS:
+                pbar.update()
+    else:
+        for i, (images, joints, masks, areas) in enumerate(data_loader):
+            assert 1 == images.size(0), 'Test batch size should be 1'
+
+            image = images[0].cpu().numpy()
+            joints = joints[0].cpu().numpy()
+            mask = masks[0].cpu().numpy()
+            area = areas[0].cpu().numpy()
+            # size at scale 1.0
+            base_size, center, scale = get_multi_scale_size(
+                image, cfg.DATASET.INPUT_SIZE, 1.0, 1.0
             )
-            if len(scores) == 0:
-                all_preds.append([])
-                all_scores.append([])
-                if cfg.TEST.LOG_PROGRESS:
-                    pbar.update()
-                continue
 
-            final_results = get_final_preds(
-                grouped, center, scale,
-                [heatmap_fuse.size(-1),heatmap_fuse.size(-2)]
-            )
+            with torch.no_grad():
+                heatmap_fuse = 0
+                final_heatmaps = None
+                final_kpts = None
+                input_size = cfg.DATASET.INPUT_SIZE
 
-            if cfg.RESCORE.USE:
-                scores = rescore_valid(cfg, final_results, scores)
+                for idx, s in enumerate(sorted(cfg.TEST.SCALE_FACTOR, reverse=True)):
 
-            all_preds.append(final_results)
-            all_scores.append(scores)
+                    image_resized, joints_resized, _, center, scale = resize_align_multi_scale(
+                        image, joints, mask, input_size, s, 1.0
+                    )
 
-        if cfg.TEST.LOG_PROGRESS:
-            pbar.update()
+                    image_resized = transforms(image_resized)
+                    image_resized = image_resized.unsqueeze(0).cuda()
+
+                    outputs, heatmaps, kpts = get_multi_stage_outputs(
+                        cfg, model, image_resized, cfg.TEST.FLIP_TEST
+                    )
+                    final_heatmaps, final_kpts = aggregate_results(
+                        cfg, final_heatmaps, final_kpts, heatmaps, kpts
+                    )
+
+                for heatmap in final_heatmaps:
+                    heatmap_fuse += up_interpolate(
+                        heatmap,
+                        size=(base_size[1], base_size[0]),
+                        mode='bilinear'
+                    )
+                heatmap_fuse = heatmap_fuse/float(len(final_heatmaps))
+
+                # for only pred kpts
+                grouped, scores = parser.parse(
+                    final_heatmaps, final_kpts, heatmap_fuse[0], use_heatmap=False
+                )
+
+                if len(scores) == 0:
+                    all_reg_preds.append([])
+                    all_reg_scores.append([])
+                else:
+                    final_results = get_final_preds(
+                        grouped, center, scale,
+                        [heatmap_fuse.size(-1),heatmap_fuse.size(-2)]
+                    )
+                    if cfg.RESCORE.USE:
+                        scores = rescore_valid(cfg, final_results, scores)
+                    all_reg_preds.append(final_results)
+                    all_reg_scores.append(scores)
+
+                # for pred kpts and pred heatmaps
+                grouped, scores = parser.parse(
+                    final_heatmaps, final_kpts, heatmap_fuse[0], use_heatmap=True
+                )
+                if len(scores) == 0:
+                    all_preds.append([])
+                    all_scores.append([])
+                    if cfg.TEST.LOG_PROGRESS:
+                        pbar.update()
+                    continue
+
+                final_results = get_final_preds(
+                    grouped, center, scale,
+                    [heatmap_fuse.size(-1),heatmap_fuse.size(-2)]
+                )
+
+                if cfg.RESCORE.USE:
+                    scores = rescore_valid(cfg, final_results, scores)
+
+                all_preds.append(final_results)
+                all_scores.append(scores)
+
+            if cfg.TEST.LOG_PROGRESS:
+                pbar.update()
     
     sv_all_preds = [all_reg_preds, all_preds]
     sv_all_scores = [all_reg_scores, all_scores]

@@ -45,6 +45,9 @@ _C.MODEL.INIT_WEIGHTS = True
 _C.MODEL.PRETRAINED = ''
 _C.MODEL.NUM_JOINTS = 17
 _C.MODEL.EXTRA = CN(new_allowed=True)
+################# Whether use Pose Refine Machine #####
+_C.MODEL.USE_PRM = False
+#######################################################
 
 _C.LOSS = CN()
 _C.LOSS.NUM_STAGES = 1
@@ -53,6 +56,13 @@ _C.LOSS.HEATMAPS_LOSS_FACTOR = (1.0,)
 
 _C.LOSS.WITH_OFFSETS_LOSS = (True,)
 _C.LOSS.OFFSETS_LOSS_FACTOR = (1.0,)
+
+################### Whether use focal loss ############
+_C.LOSS.USE_FOCAL_LOSS = False
+_C.LOSS.FOCAL_LOSS_FACTOR = [0.01, 0.1, 0.02]
+_C.LOSS.USE_WEIGHT_LOSS = False
+_C.LOSS.HEATMAP_MIDDLE_LOSS = False
+#######################################################
 
 # DATASET related params
 _C.DATASET = CN()
@@ -76,6 +86,14 @@ _C.DATASET.MAX_ROTATION = 30
 _C.DATASET.MIN_SCALE = 0.75
 _C.DATASET.MAX_SCALE = 1.25
 _C.DATASET.SCALE_TYPE = 'short'
+######################################################
+_C.DATASET.SCALE_AWARE_SIGMA = False
+_C.DATASET.INTER_SIGMA = False
+_C.DATASET.INTRA_SIGMA = False
+_C.DATASET.USE_JNT = False
+_C.DATASET.USE_SUBSET = False
+_C.DATASET.SUBSET_FACTOR = 0.3
+######################################################
 _C.DATASET.MAX_TRANSLATE = 40
 _C.DATASET.INPUT_SIZE = 512
 _C.DATASET.OUTPUT_SIZE = [128, 256, 512]

@@ -11,7 +11,7 @@ from __future__ import division
 from __future__ import print_function
 
 import torch.utils.data
-
+import numpy as np
 from .COCODataset import CocoDataset as coco
 from .COCODatasetGetScoreData import CocoDatasetGetScoreData as cocoscore
 from .CrowdPoseDatasetGetScoreData import CrowdPoseDatasetGetScoreData as crowdposescore
@@ -21,17 +21,23 @@ from .CrowdPoseKeypoints import CrowdPoseKeypoints as crowd_pose_kpt
 from .transforms import build_transforms
 from .target_generators import HeatmapGenerator
 from .target_generators import OffsetGenerator
+from .target_generators import ScaleAwareHeatmapGenerator
 
 
 def build_dataset(cfg, is_train):
     # is_train判断是否训练，只有在训练时候才会对数据进行转换处理
     transforms = build_transforms(cfg, is_train)
 
-    _HeatmapGenerator = HeatmapGenerator
+    ################################################################
+    if cfg.DATASET.SCALE_AWARE_SIGMA:
+        _HeatmapGenerator = ScaleAwareHeatmapGenerator
+    else:
+        _HeatmapGenerator = HeatmapGenerator
+    ################################################################
 
     heatmap_generator = [
         _HeatmapGenerator(
-            output_size, cfg.DATASET.NUM_JOINTS
+            output_size, cfg.DATASET.NUM_JOINTS, cfg.DATASET.USE_JNT
         ) for output_size in cfg.DATASET.OUTPUT_SIZE
     ]
 
@@ -58,6 +64,25 @@ def build_dataset(cfg, is_train):
         offset_generator,
         transforms
     )
+
+    ################################################################
+    if cfg.DATASET.USE_SUBSET:
+        validation_split = cfg.DATASET.SUBSET_FACTOR
+        dataset_size = len(dataset)
+        indices = list(range(dataset_size))
+        split = int(np.floor(validation_split * dataset_size))
+        _, val_indices = indices[split:], indices[:split]
+        valid_dataset = torch.utils.data.Subset(dataset, val_indices)
+        dataset = valid_dataset
+
+    # if cfg.DATASET.MAKE_VALID_SUBSET:
+    #     split = 1000
+    #     dataset_size = len(dataset)
+    #     indices = list(range(dataset_size))
+    #     _, val_indices = indices[split:], indices[:split]
+    #     valid_dataset = torch.utils.data.Subset(dataset, val_indices)
+    #     dataset = valid_dataset
+    ################################################################
 
     return dataset
 

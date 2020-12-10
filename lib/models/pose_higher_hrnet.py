@@ -35,6 +35,39 @@ blocks_dict = {
     'STNBLOCK': STNBLOCK
 }
 
+############################### PRM #########################
+class conv_bn_relu(nn.Module):
+    '''
+    Pose Refine Mechine
+    '''
+    def __init__(self, in_planes, out_planes, kernel_size, stride, padding,
+            has_bn=True, has_relu=True, groups=1):
+        super(conv_bn_relu, self).__init__()
+        self.conv = nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size,
+                stride=stride, padding=padding, groups=groups)
+        self.has_bn = has_bn
+        self.has_relu = has_relu
+        self.bn = nn.BatchNorm2d(out_planes)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        def _func_factory(conv, bn, relu, has_bn, has_relu):
+            def func(x):
+                x = conv(x)
+                if has_bn:
+                    x = bn(x)
+                if has_relu:
+                    x = relu(x)
+                return x
+            return func
+
+        func = _func_factory(
+                self.conv, self.bn, self.relu, self.has_bn, self.has_relu)
+        x = func(x)
+
+        return x
+##############################################################
+
 
 class PoseHigherResolutionNet(nn.Module):
 
@@ -76,6 +109,12 @@ class PoseHigherResolutionNet(nn.Module):
             pre_stage_channels, num_channels)
         self.stage3, pre_stage_channels = self._make_stage(
             self.stage3_cfg, num_channels)
+
+        ############################# Do middle supervision ####################
+        self.middle_out = cfg.LOSS.HEATMAP_MIDDLE_LOSS
+        if cfg.LOSS.HEATMAP_MIDDLE_LOSS:
+            self.middle_layers = self._make_middle_layers(cfg, pre_stage_channels[0])
+        ########################################################################
 
         self.stage4_cfg = cfg['MODEL']['EXTRA']['STAGE4']
         num_channels = self.stage4_cfg['NUM_CHANNELS']
@@ -120,6 +159,11 @@ class PoseHigherResolutionNet(nn.Module):
         self.loss_config = cfg.LOSS
 
         self.pretrained_layers = cfg['MODEL']['EXTRA']['PRETRAINED_LAYERS']
+        ############################## Add PRM in the final layer ##############
+        self.use_prm = cfg.MODEL.USE_PRM
+        if self.use_prm:
+            self.layer_1, self.layer_2, self.layer_3 = self._make_prm_layers(self.dim_heat)
+        ########################################################################
 
     def _make_final_layers(self, cfg, multi_output_config_heatmap, multi_output_config_regression):
         # 预测Heatmap和Regression部分
@@ -159,6 +203,52 @@ class PoseHigherResolutionNet(nn.Module):
                 ))
 
         return nn.ModuleList(final_layers)
+
+    ############################## make middle layer ####################
+    def _make_middle_layers(self, cfg, input_channels):
+        extra = cfg.MODEL.EXTRA
+        middle_layers = []
+        output_channels = cfg.MODEL.NUM_JOINTS
+        middle_layers.append(nn.Conv2d(
+            in_channels=input_channels,
+            out_channels=self.dim_heat,
+            kernel_size=extra.FINAL_CONV_KERNEL,
+            stride=1,
+            padding=1 if extra.FINAL_CONV_KERNEL == 3 else 0
+        ))
+
+        return nn.ModuleList(middle_layers)
+    ######################################################################
+    ############################## make prm layers ######################
+    def _make_prm_layers(self, input_channels):
+        layer_1 = []
+        layer_2 = []
+        layer_3 = []
+        layer_1.append(
+            conv_bn_relu(input_channels, input_channels, kernel_size=3,
+                    stride=1, padding=1, has_bn=True, has_relu=True)
+        )
+        layer_2.append(
+            conv_bn_relu(input_channels, input_channels, kernel_size=1,
+                    stride=1, padding=0, has_bn=True, has_relu=True)
+        )
+        layer_2.append(
+            conv_bn_relu(input_channels, input_channels, kernel_size=1,
+                    stride=1, padding=0, has_bn=True, has_relu=True)
+        )
+        layer_2.append(nn.Sigmoid())
+        layer_3.append(
+            conv_bn_relu(input_channels, input_channels, kernel_size=1,
+                    stride=1, padding=0, has_bn=True, has_relu=True)
+        )
+        layer_3.append(
+            conv_bn_relu(input_channels, input_channels, kernel_size=9,
+                    stride=1, padding=4, has_bn=True, has_relu=True, groups=input_channels)
+        )
+        layer_3.append(nn.Sigmoid())
+
+        return nn.ModuleList(layer_1), nn.ModuleList(layer_2), nn.ModuleList(layer_3)
+    ######################################################################
 
     def _make_layer(
             self, block, inplanes, planes, blocks, stride=1, 
@@ -376,6 +466,11 @@ class PoseHigherResolutionNet(nn.Module):
                 x_list.append(y_list[i])
         y_list = self.stage3(x_list)
 
+        ########### middle supervision###############
+        if self.middle_out:
+            middle_output = self.middle_layers[0](y_list[0])
+        #############################################
+
         x_list = []
         for i in range(self.stage4_cfg['NUM_BRANCHES']):
             if self.transition3[i] is not None:
@@ -404,8 +499,19 @@ class PoseHigherResolutionNet(nn.Module):
         # multi_level_layers是不同dilatin的STN block的集合
         # final_output是在不同dilation的STN模块后预测的Heatmap集合
         for j in range(len(self.multi_level_layers_4x_heatmap)):
-            final_output.append(self.final_layers[0](  \
-                self.multi_level_layers_4x_heatmap[j](x_cls)))
+            out = self.final_layers[0](\
+                self.multi_level_layers_4x_heatmap[j](x_cls))
+            ############################################################################
+            if self.use_prm:
+                out_1 = self.layer_1(out)
+                out_2 = torch.nn.functional.adaptive_avg_pool2d(out_1, (1, 1))
+                out_2 = self.layer_2(out_2)
+                out_3 = self.layer_3(out_1)
+                final_output.append(out_1.mul(1 + out_2.mul(out_3)))
+            else:
+                final_output.append(out)
+            ############################################################################
+
 
         # 对图像特征进行Deconv提升分辨率后进行进一步的预测
         heatmap_2x = None
@@ -435,7 +541,12 @@ class PoseHigherResolutionNet(nn.Module):
             final_outputs.append([heatmap_2x])                  # heatmap 2*
         final_offsets.append([final_offset[0][:,:-1,:,:]])      # offsetmap
 
-        return final_outputs, final_offsets
+        ####################################################################################
+        if self.middle_out:
+            return final_outputs, final_offsets, middle_output
+        else:
+            return final_outputs, final_offsets
+        #####################################################################################
 
     def init_weights(self, pretrained='', verbose=True):
         logger.info('=> init weights from normal distribution')
